@@ -20,6 +20,7 @@ struct Comment: Identifiable {
 }
 
 struct SocialView: View {
+    @EnvironmentObject var authManager: AuthenticationManager
     @State private var posts: [Post] = []
     @State private var selectedTab = 0
     @State private var showingNewPostSheet = false
@@ -73,6 +74,7 @@ struct SocialView: View {
                     // Add new post to feed
                     posts.insert(post, at: 0)
                 })
+                .environmentObject(authManager)
             }
             .onAppear {
                 // Load sample posts
@@ -114,8 +116,35 @@ struct SocialView: View {
     }
     
     private func loadSamplePosts() {
+        // Try to fetch posts from the database
+        Task {
+            do {
+                let postService = PostService()
+                let fetchedPosts = try await postService.fetchPosts()
+                
+                await MainActor.run {
+                    if !fetchedPosts.isEmpty {
+                        self.posts = fetchedPosts
+                    } else {
+                        // Fallback to sample data if no posts in database
+                        createSamplePosts()
+                    }
+                }
+            } catch {
+                print("Error fetching posts: \(error)")
+                
+                // Fallback to sample data on error
+                await MainActor.run {
+                    createSamplePosts()
+                }
+            }
+        }
+    }
+    
+    // Create sample posts for when the database is empty
+    private func createSamplePosts() {
         // Sample users
-        let user1 = User(id: UUID(), username: "Emma", email: "emma@example.com", created_at: Date(), totalWorkouts: 45, completedChallenges: 12, totalPoints: 3250)
+        let user1 = authManager.currentUser ?? User(id: UUID(), username: "Emma", email: "emma@example.com", created_at: Date(), totalWorkouts: 45, completedChallenges: 12, totalPoints: 3250)
         let user2 = User(id: UUID(), username: "Michael", email: "michael@example.com", created_at: Date(), totalWorkouts: 32, completedChallenges: 8, totalPoints: 2800)
         let user3 = User(id: UUID(), username: "Sophia", email: "sophia@example.com", created_at: Date(), totalWorkouts: 22, completedChallenges: 5, totalPoints: 1500)
         
@@ -375,6 +404,7 @@ struct CommentView: View {
 }
 
 struct NewPostView: View {
+    @EnvironmentObject var authManager: AuthenticationManager
     @Binding var isPresented: Bool
     let onPost: (Post) -> Void
     @State private var postText = ""
@@ -458,10 +488,12 @@ struct NewPostView: View {
     }
     
     private func createPost() {
-        // Create a dummy user for demo
-        let currentUser = User(id: UUID(), username: "Emma", email: "emma@example.com", created_at: Date(), totalWorkouts: 45, completedChallenges: 12, totalPoints: 3250)
+        guard let currentUser = authManager.currentUser else {
+            print("Cannot create post: No authenticated user")
+            return
+        }
         
-        // Create and return a new post
+        // First create the post in memory
         let newPost = Post(
             user: currentUser,
             content: postText,
@@ -473,6 +505,26 @@ struct NewPostView: View {
             comments: []
         )
         
+        // Then save it to the database
+        Task {
+            do {
+                let postService = PostService()
+                
+                // We no longer create a workout when tagging a post
+                // Just save the post with the workout type as metadata
+                _ = try await postService.savePost(
+                    userId: currentUser.id,
+                    content: postText,
+                    workoutType: selectedWorkoutType?.rawValue
+                )
+                
+                print("Post successfully saved to database")
+            } catch {
+                print("Error saving post to database: \(error)")
+            }
+        }
+        
+        // Return the new post to update the UI immediately
         onPost(newPost)
     }
 }

@@ -7,6 +7,7 @@ struct ChallengeType: Identifiable, Hashable {
 }
 
 struct ChallengesView: View {
+    @EnvironmentObject var authManager: AuthenticationManager
     @State private var selectedFilter: String = "All"
     @State private var searchText: String = ""
     @State private var showingNewChallengeSheet = false
@@ -60,6 +61,7 @@ struct ChallengesView: View {
             }
             .sheet(isPresented: $showingNewChallengeSheet) {
                 NewChallengeView(isPresented: $showingNewChallengeSheet)
+                    .environmentObject(authManager)
             }
             .onAppear {
                 // Load sample challenges
@@ -203,6 +205,7 @@ struct FilterButton: View {
 }
 
 struct NewChallengeView: View {
+    @EnvironmentObject var authManager: AuthenticationManager
     @Binding var isPresented: Bool
     @State private var challengeTitle: String = ""
     @State private var challengeDescription: String = ""

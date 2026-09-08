@@ -50,6 +50,82 @@ func addTestUser() {
     }
 }
 
+func testWeightliftingWorkoutDetails() {
+    Task {
+        do {
+            // Create test weightlifting workout details
+            struct TestWeightliftingDetails: Encodable {
+                let workout_id: String
+                let workout_name: String
+                let sets: Int
+                let reps: [Int]     // Array of reps for each exercise
+                let weight: [Double] // Array of weights for each exercise  
+            }
+            
+            let testDetails = TestWeightliftingDetails(
+                workout_id: UUID().uuidString,
+                workout_name: "Test Weightlifting Workout",
+                sets: 6,
+                reps: [10, 12, 8],        // 3 exercises with different reps
+                weight: [50.0, 75.0, 25.0] // 3 exercises with different weights
+            )
+            
+            print("🧪 Testing weightlifting workout details insert...")
+            let response = try await DatabaseManager.client
+                .from("weightlifting_workout_details")
+                .insert([testDetails])
+                .execute()
+            
+            print("✅ Weightlifting workout details added successfully!")
+            let data = response.data
+            if let jsonString = String(data: data, encoding: .utf8) {
+                print("Response: \(jsonString)")
+            }
+        } catch {
+            print("❌ Failed to add weightlifting workout details!")
+            print("Error: \(error)")
+            print("Localized description: \(error.localizedDescription)")
+        }
+    }
+}
+
+func testRunningWorkoutDetails() {
+    Task {
+        do {
+            // Create test running workout details
+            struct TestRunningDetails: Encodable {
+                let workout_id: String
+                let duration: Int
+                let distance: Double
+                let splits: Double?
+            }
+            
+            let testDetails = TestRunningDetails(
+                workout_id: UUID().uuidString,
+                duration: 1800, // 30 minutes in seconds
+                distance: 5.0,  // 5km
+                splits: 7.0     // 7 splits
+            )
+            
+            print("🏃 Testing running workout details insert...")
+            let response = try await DatabaseManager.client
+                .from("running_workout_details")
+                .insert([testDetails])
+                .execute()
+            
+            print("✅ Running workout details added successfully!")
+            let data = response.data
+            if let jsonString = String(data: data, encoding: .utf8) {
+                print("Response: \(jsonString)")
+            }
+        } catch {
+            print("❌ Failed to add running workout details!")
+            print("Error: \(error)")
+            print("Localized description: \(error.localizedDescription)")
+        }
+    }
+}
+
 struct DatabaseTestView: View {
     var body: some View {
         VStack(spacing: 20) {
@@ -58,6 +134,22 @@ struct DatabaseTestView: View {
             }
             .padding()
             .background(Color.green)
+            .foregroundColor(.white)
+            .cornerRadius(8)
+            
+            Button("Test Weightlifting Details") {
+                testWeightliftingWorkoutDetails()
+            }
+            .padding()
+            .background(Color.blue)
+            .foregroundColor(.white)
+            .cornerRadius(8)
+            
+            Button("Test Running Details") {
+                testRunningWorkoutDetails()
+            }
+            .padding()
+            .background(Color.orange)
             .foregroundColor(.white)
             .cornerRadius(8)
         }

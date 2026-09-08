@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
-    @State private var user = User(id: UUID(), username: "Emma", email: "emma@example.com", created_at: Date(), totalWorkouts: 45, completedChallenges: 12, totalPoints: 3250)
+    @EnvironmentObject var authManager: AuthenticationManager
     @State private var recentWorkouts: [Workout] = []
     
     var body: some View {
@@ -31,8 +31,11 @@ struct HomeView: View {
                 }
             }
             .onAppear {
-                // Simulated data loading
-                loadRecentWorkouts()
+                // Refresh user profile to get latest stats
+                Task {
+                    await authManager.refreshUserProfile()
+                    loadRecentWorkouts()
+                }
             }
         }
     }
@@ -49,9 +52,9 @@ struct HomeView: View {
                 GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 16) {
-                StatCard(title: "Workouts", value: "\(user.totalWorkouts)", icon: "figure.run")
-                StatCard(title: "Challenges", value: "\(user.completedChallenges)", icon: "trophy.fill")
-                StatCard(title: "Points", value: "\(Int(user.totalPoints))", icon: "star.fill")
+                StatCard(title: "Workouts", value: "\(authManager.currentUser?.totalWorkouts ?? 0)", icon: "figure.run")
+                StatCard(title: "Challenges", value: "\(authManager.currentUser?.completedChallenges ?? 0)", icon: "trophy.fill")
+                StatCard(title: "Points", value: "\(Int(authManager.currentUser?.totalPoints ?? 0))", icon: "star.fill")
             }
         }
         .padding()
@@ -101,11 +104,14 @@ struct HomeView: View {
     // Quick access buttons
     private var quickAccessSection: some View {
         HStack(spacing: 20) {
-            QuickAccessButton(
-                title: "Start Workout",
-                icon: "play.fill",
-                color: Color(AppSettings.Colors.primary)
-            )
+            NavigationLink(destination: WorkoutSelectionView()) {
+                QuickAccessButton(
+                    title: "Start Workout",
+                    icon: "play.fill",
+                    color: Color(AppSettings.Colors.primary)
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
             
             QuickAccessButton(
                 title: "Join Challenge",
@@ -121,14 +127,32 @@ struct HomeView: View {
         }
     }
     
-    // Simulated data loading
+    // Load recent workouts from the database
     private func loadRecentWorkouts() {
-        // Simulate loading workouts
-        recentWorkouts = [
-            Workout(id: UUID(), userId: user.id, workoutDate: Date().addingTimeInterval(-86400), workoutType: .running, points: 120, created_at: Date().addingTimeInterval(-86400)),
-            Workout(id: UUID(), userId: user.id, workoutDate: Date().addingTimeInterval(-172800), workoutType: .weightlifting, points: 100, created_at: Date().addingTimeInterval(-172800)),
-            Workout(id: UUID(), userId: user.id, workoutDate: Date().addingTimeInterval(-259200), workoutType: .basketball, points: 150, created_at: Date().addingTimeInterval(-259200))
-        ]
+        guard let userId = authManager.currentUser?.id else { return }
+        
+        // Fetch workouts from database
+        Task {
+            do {
+                let workoutService = WorkoutService()
+                let fetchedWorkouts = try await workoutService.fetchRecentWorkouts(userId: userId.uuidString)
+                
+                await MainActor.run {
+                    self.recentWorkouts = fetchedWorkouts
+                    
+                    // If no workouts were fetched, provide fallback sample data for testing
+                    if self.recentWorkouts.isEmpty {
+                        // Fallback to sample data (only for testing)
+                        self.recentWorkouts = [
+                            Workout(id: UUID(), user_id: userId, workout_date: Date().addingTimeInterval(-86400), workout_type: .running, points: 120, created_at: Date().addingTimeInterval(-86400)),
+                            Workout(id: UUID(), user_id: userId, workout_date: Date().addingTimeInterval(-172800), workout_type: .weightlifting, points: 100, created_at: Date().addingTimeInterval(-172800))
+                        ]
+                    }
+                }
+            } catch {
+                print("Error fetching recent workouts: \(error)")
+            }
+        }
     }
 }
 
@@ -167,7 +191,7 @@ struct RecentWorkoutCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Image(systemName: iconForWorkoutType(workout.workoutType))
+                Image(systemName: iconForWorkoutType(workout.workout_type))
                     .font(.system(size: 22))
                     .foregroundColor(Color(AppSettings.Colors.primary))
                 
@@ -180,11 +204,11 @@ struct RecentWorkoutCard: View {
             
             Spacer()
             
-            Text(workout.workoutType.rawValue.capitalized)
+            Text(workout.workout_type.rawValue.capitalized)
                 .font(.custom(AppSettings.Fonts.title, size: 16))
                 .foregroundColor(Color(AppSettings.Colors.text))
             
-            Text(formattedDate(workout.workoutDate))
+            Text(formattedDate(workout.workout_date))
                 .font(.custom(AppSettings.Fonts.body, size: 12))
                 .foregroundColor(.secondary)
         }
@@ -242,4 +266,5 @@ struct QuickAccessButton: View {
 
 #Preview {
     HomeView()
+        .environmentObject(AuthenticationManager())
 } 

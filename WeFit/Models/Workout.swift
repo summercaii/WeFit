@@ -8,9 +8,9 @@ enum WorkoutType: String, Codable, CaseIterable {
 
 struct Workout: Identifiable, Codable {
     let id: UUID
-    let userId: UUID
-    let workoutDate: Date
-    let workoutType: WorkoutType
+    let user_id: UUID
+    let workout_date: Date
+    let workout_type: WorkoutType
     let points: Double
     let created_at: Date
 }
