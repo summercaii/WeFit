@@ -39,13 +39,6 @@ struct ContentView: View {
                     Text("Profile")
                 }
                 .tag(3)
-
-            DatabaseTestView()
-                .tabItem {
-                    Image(systemName: "bolt.horizontal.fill")
-                    Text("Test DB")
-                }
-                .tag(4)
         }
         .accentColor(Color("accent-blue"))
     }

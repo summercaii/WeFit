@@ -938,14 +938,18 @@ struct NewPostView: View {
     
     // Generate thumbnail from video URL
     private func generateVideoThumbnail(from url: URL) async -> UIImage? {
+        let asset = AVURLAsset(url: url)
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        imageGenerator.appliesPreferredTrackTransform = true
+        imageGenerator.maximumSize = CGSize(width: 300, height: 300)
+
+        // Clamp to the clip's actual length so short videos (< 1s) still get a frame
+        // instead of requesting a timestamp past the end of the asset.
+        let durationSeconds = (try? await asset.load(.duration))?.seconds ?? 0
+        let captureSeconds = durationSeconds > 0 ? min(1.0, durationSeconds / 2) : 0
+        let time = CMTime(seconds: captureSeconds, preferredTimescale: 600)
+
         return await withCheckedContinuation { continuation in
-            let asset = AVAsset(url: url)
-            let imageGenerator = AVAssetImageGenerator(asset: asset)
-            imageGenerator.appliesPreferredTrackTransform = true
-            imageGenerator.maximumSize = CGSize(width: 300, height: 300)
-            
-            let time = CMTime(seconds: 1.0, preferredTimescale: 600)
-            
             imageGenerator.generateCGImageAsynchronously(for: time) { cgImage, _, error in
                 if let cgImage = cgImage {
                     let thumbnail = UIImage(cgImage: cgImage)

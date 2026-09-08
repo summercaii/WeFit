@@ -284,25 +284,80 @@ class PostService {
                     contentType: mediaType == .image ? "image/jpeg" : "video/mp4"
                 )
             )
-        
+
         // Get public URL - createSignedURL returns a URL object, convert to string
         let signedURL = try await client.storage
             .from("post-media")
             .createSignedURL(path: fileName, expiresIn: 31536000) // 1 year
-        
+
         let mediaUrl = signedURL.absoluteString
-        
-        // For videos, we might want to generate a thumbnail
-        // For now, return nil for thumbnail URL
+
         var thumbnailUrl: String? = nil
-        
+
         if mediaType == .video {
-            // TODO: Implement video thumbnail generation
-            // For now, we'll use a placeholder or the video URL itself
-            thumbnailUrl = mediaUrl
+            do {
+                thumbnailUrl = try await uploadVideoThumbnail(videoData: imageData, sourceFileName: fileName)
+                if let thumbnailUrl {
+                    print("✅ Video thumbnail uploaded: \(thumbnailUrl)")
+                } else {
+                    print("⚠️ Video thumbnail generation returned nil with no thrown error")
+                }
+            } catch {
+                // Don't fail the whole post if only the thumbnail step breaks -
+                // the video itself already uploaded fine above.
+                print("❌ Video thumbnail generation/upload failed: \(error)")
+                thumbnailUrl = nil
+            }
         }
-        
+
         return (mediaUrl, thumbnailUrl)
+    }
+
+    /// Extracts a frame near the start of the video and uploads it as a
+    /// separate JPEG so the feed has a real image to show via AsyncImage
+    /// (the video file itself can't be decoded as an image).
+    private func uploadVideoThumbnail(videoData: Data, sourceFileName: String) async throws -> String? {
+        let tempVideoURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("mp4")
+        try videoData.write(to: tempVideoURL)
+        defer { try? FileManager.default.removeItem(at: tempVideoURL) }
+
+        let asset = AVURLAsset(url: tempVideoURL)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+
+        let duration = try await asset.load(.duration)
+        let captureTime = CMTime(seconds: min(0.5, duration.seconds / 2), preferredTimescale: 600)
+
+        let cgImage = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CGImage, Error>) in
+            generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: captureTime)]) { _, image, _, result, error in
+                if let image {
+                    continuation.resume(returning: image)
+                } else {
+                    continuation.resume(throwing: error ?? NSError(domain: "PostService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not generate video thumbnail"]))
+                }
+            }
+        }
+
+        guard let thumbnailData = UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.7) else {
+            return nil
+        }
+
+        let thumbnailFileName = "thumb_" + (sourceFileName as NSString).deletingPathExtension + ".jpg"
+        _ = try await client.storage
+            .from("post-media")
+            .upload(
+                path: thumbnailFileName,
+                file: thumbnailData,
+                options: FileOptions(contentType: "image/jpeg")
+            )
+
+        let signedThumbnailURL = try await client.storage
+            .from("post-media")
+            .createSignedURL(path: thumbnailFileName, expiresIn: 31536000)
+
+        return signedThumbnailURL.absoluteString
     }
     
     // Save a post to the database with optional media
