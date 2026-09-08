@@ -13,12 +13,17 @@ struct WeFitApp: App {
     
     var body: some Scene {
         WindowGroup {
-            if authManager.isAuthenticated {
-                ContentView()
-                    .environmentObject(authManager)
-            } else {
-                AuthenticationView()
-                    .environmentObject(authManager)
+            Group {
+                if authManager.isAuthenticated {
+                    ContentView()
+                        .environmentObject(authManager)
+                } else {
+                    AuthenticationView()
+                        .environmentObject(authManager)
+                }
+            }
+            .onOpenURL { url in
+                StravaSyncService.shared.handleRedirect(url: url)
             }
         }
     }

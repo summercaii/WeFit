@@ -23,7 +23,9 @@ struct ProfileView: View {
                     
                     // Stats Overview
                     StatsGridView(user: user)
-                    
+
+                    StravaConnectCard(userId: user.id)
+
                     // Segment Control
                     Picker("Content", selection: $selectedSegment) {
                         Text("Workouts").tag(0)
@@ -157,6 +159,65 @@ struct StatsGridView: View {
             StatItem(title: "Challenges", value: "\(user?.completedChallenges ?? 0)")
             StatItem(title: "Points", value: "\(Int(user?.totalPoints ?? 0))")
         }
+        .padding(.horizontal)
+    }
+}
+
+struct StravaConnectCard: View {
+    let userId: UUID
+    @StateObject private var strava = StravaSyncService.shared
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 6) {
+            HStack {
+                Image(systemName: "figure.run.circle.fill")
+                    .foregroundColor(.orange)
+                    .font(.title2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(strava.isConnected ? "Strava Connected" : "Connect Strava")
+                        .font(.subheadline).bold()
+                    if let error = strava.errorMessage {
+                        Text(error).font(.caption).foregroundColor(.red)
+                    } else if let count = strava.lastSyncedCount {
+                        Text(count == 0 ? "Up to date" : "Imported \(count) new run\(count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text(strava.isConnected ? "Sync your recent runs" : "Auto-import your runs")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Spacer()
+                if strava.isSyncing {
+                    ProgressView()
+                } else {
+                    Button(strava.isConnected ? "Sync" : "Connect") {
+                        Task {
+                            if strava.isConnected {
+                                await strava.syncRecentRuns(userId: userId)
+                            } else {
+                                await strava.connect()
+                            }
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            if strava.isConnected {
+                Button("Reset sync history") {
+                    strava.resetSyncHistory()
+                }
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.secondary.opacity(0.1))
+        )
         .padding(.horizontal)
     }
 }

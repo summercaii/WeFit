@@ -16,3 +16,6 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# Real Strava API credentials - never commit these (see StravaConfig.example.swift)
+WeFit/Models/StravaConfig.swift
