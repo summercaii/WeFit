@@ -19,12 +19,6 @@ struct StatusBadge: View {
             return .green.opacity(0.1)
         case "in_progress":
             return .blue.opacity(0.1)
-        case "active":
-            return .green.opacity(0.1)
-        case "paused":
-            return .orange.opacity(0.1)
-        case "cancelled":
-            return .red.opacity(0.1)
         default:
             return .gray.opacity(0.1)
         }
@@ -36,12 +30,6 @@ struct StatusBadge: View {
             return .green
         case "in_progress":
             return .blue
-        case "active":
-            return .green
-        case "paused":
-            return .orange
-        case "cancelled":
-            return .red
         default:
             return .gray
         }

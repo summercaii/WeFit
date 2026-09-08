@@ -2,16 +2,13 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleURLTypes</key>
-	<array>
+	<key>SchemeUserState</key>
+	<dict>
+		<key>WeFit.xcscheme_^#shared#^_</key>
 		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.fitness.WeFit.strava</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>wefit</string>
-			</array>
+			<key>orderHint</key>
+			<integer>0</integer>
 		</dict>
-	</array>
+	</dict>
 </dict>
 </plist>

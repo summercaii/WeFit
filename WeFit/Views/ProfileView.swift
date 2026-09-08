@@ -1,25 +1,15 @@
 import SwiftUI
 
 struct ProfileView: View {
-    @EnvironmentObject var authManager: AuthenticationManager
+    @State private var user: User? = nil // This would be fetched from your backend
     @State private var selectedSegment = 0
-    @State private var isEditingProfile = false
-    @State private var editedUsername = ""
     
     var body: some View {
         NavigationView {
             ScrollView {
-                if authManager.isLoadingProfile {
-                    ProgressView("Loading profile...")
-                        .padding(.top, 100)
-                } else if let user = authManager.currentUser {
                 VStack(spacing: 20) {
                     // Profile Header
-                        ProfileHeaderView(
-                            user: user,
-                            isEditing: $isEditingProfile,
-                            editedUsername: $editedUsername
-                        )
+                    ProfileHeaderView(user: user)
                     
                     // Stats Overview
                     StatsGridView(user: user)
@@ -44,68 +34,24 @@ struct ProfileView: View {
                     default:
                         EmptyView()
                     }
-                    }
-                } else {
-                    Text("Unable to load profile")
-                        .foregroundColor(.secondary)
-                        .padding(.top, 100)
                 }
             }
             .navigationTitle("Profile")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    if isEditingProfile {
-                        Button("Save") {
-                            saveProfile()
-                        }
-                    } else {
-                        Button("Edit") {
-                            startEditing()
-                        }
+                    Button(action: {
+                        // Show settings
+                    }) {
+                        Image(systemName: "gear")
                     }
                 }
-                
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Sign Out") {
-                        authManager.signOut()
-                    }
-                }
-            }
-        }
-        .onAppear {
-            Task {
-                await authManager.refreshUserProfile()
-            }
-        }
-    }
-    
-    private func startEditing() {
-        if let user = authManager.currentUser {
-            editedUsername = user.username
-        }
-        isEditingProfile = true
-    }
-    
-    private func saveProfile() {
-        guard var user = authManager.currentUser else { return }
-        user.username = editedUsername
-        
-        Task {
-            do {
-                try await authManager.userService.updateProfile(user: user)
-                await authManager.refreshUserProfile()
-                isEditingProfile = false
-            } catch {
-                print("Error updating profile: \(error)")
             }
         }
     }
 }
 
 struct ProfileHeaderView: View {
-    let user: User
-    @Binding var isEditing: Bool
-    @Binding var editedUsername: String
+    let user: User?
     
     var body: some View {
         VStack(spacing: 12) {
@@ -114,33 +60,15 @@ struct ProfileHeaderView: View {
                 .frame(width: 80, height: 80)
                 .foregroundColor(.accentColor)
             
-            if isEditing {
-                TextField("Username", text: $editedUsername)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .frame(width: 200)
-                    .multilineTextAlignment(.center)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-            } else {
-                Text(user.username)
+            Text(user?.username ?? "Username")
                 .font(.title2)
                 .bold()
-            }
             
-            Text(user.email)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            Text("Member since \(user.created_at.formatted(.dateTime.month().year()))")
+            Text("Member since \(user?.created_at.formatted(.dateTime.month().year()) ?? "")")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
         .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.secondary.opacity(0.1))
-        )
-        .padding(.horizontal)
     }
 }
 
