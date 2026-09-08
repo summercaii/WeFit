@@ -16,6 +16,7 @@ struct PostMedia {
 
 struct Post: Identifiable {
     let id = UUID()
+    let databaseId: String? // Database ID for API operations
     let user: User
     let content: String
     let image: String? // Legacy - keeping for compatibility
@@ -25,6 +26,7 @@ struct Post: Identifiable {
     let challengeId: UUID?
     var likes: Int
     var comments: [Comment]
+    var isLikedByCurrentUser: Bool = false // Track if current user liked this post
 }
 
 struct Comment: Identifiable {
@@ -59,6 +61,7 @@ struct SocialView: View {
                         } else {
                             ForEach(filteredPosts) { post in
                                 PostCard(post: post)
+                                    .environmentObject(authManager)
                             }
                         }
                     }
@@ -160,7 +163,11 @@ struct SocialView: View {
             do {
                 let postService = PostService()
                 print("📡 SocialView: Making database request for posts...")
-                let fetchedPosts = try await postService.fetchPosts()
+                
+                // Get current user ID for like status tracking
+                let currentUserId = authManager.currentUser?.id.uuidString
+                
+                let fetchedPosts = try await postService.fetchPosts(currentUserId: currentUserId)
                 print("✅ SocialView: Successfully fetched \(fetchedPosts.count) posts from database")
                 
                 await MainActor.run {
@@ -189,13 +196,41 @@ struct SocialView: View {
     // Create sample posts for when the database is empty
     private func createSamplePosts() {
         // Sample users
-        let user1 = authManager.currentUser ?? User(id: UUID(), username: "Emma", email: "emma@example.com", created_at: Date(), totalWorkouts: 45, completedChallenges: 12, totalPoints: 3250)
-        let user2 = User(id: UUID(), username: "Michael", email: "michael@example.com", created_at: Date(), totalWorkouts: 32, completedChallenges: 8, totalPoints: 2800)
-        let user3 = User(id: UUID(), username: "Sophia", email: "sophia@example.com", created_at: Date(), totalWorkouts: 22, completedChallenges: 5, totalPoints: 1500)
+        let user1 = authManager.currentUser ?? User(
+            id: UUID(), 
+            username: "Emma", 
+            email: "emma@example.com", 
+            created_at: Date(), 
+            totalWorkouts: 45, 
+            completedChallenges: 12, 
+            challengePoints: 1500,
+            workoutPoints: 1750
+        )
+        let user2 = User(
+            id: UUID(), 
+            username: "Michael", 
+            email: "michael@example.com", 
+            created_at: Date(), 
+            totalWorkouts: 32, 
+            completedChallenges: 8, 
+            challengePoints: 1000,
+            workoutPoints: 1800
+        )
+        let user3 = User(
+            id: UUID(), 
+            username: "Sophia", 
+            email: "sophia@example.com", 
+            created_at: Date(), 
+            totalWorkouts: 22, 
+            completedChallenges: 5, 
+            challengePoints: 500,
+            workoutPoints: 1000
+        )
         
         // Sample posts
         posts = [
             Post(
+                databaseId: nil,
                 user: user2,
                 content: "Just completed my morning 5K run! Feeling great and ready for the day. Who's up for a challenge this weekend?",
                 image: nil,
@@ -206,9 +241,11 @@ struct SocialView: View {
                 likes: 12,
                 comments: [
                     Comment(user: user3, content: "Great job! I'll join you this weekend.", timestamp: Date().addingTimeInterval(-1800))
-                ]
+                ],
+                isLikedByCurrentUser: false
             ),
             Post(
+                databaseId: nil,
                 user: user3,
                 content: "Joined the 30-day strength challenge! Who else is in?",
                 image: nil,
@@ -217,9 +254,11 @@ struct SocialView: View {
                 workoutType: .weightlifting,
                 challengeId: UUID(),
                 likes: 8,
-                comments: []
+                comments: [],
+                isLikedByCurrentUser: false
             ),
             Post(
+                databaseId: nil,
                 user: user1,
                 content: "New personal best on my deadlift today! 💪",
                 image: nil,
@@ -231,7 +270,8 @@ struct SocialView: View {
                 comments: [
                     Comment(user: user2, content: "Awesome! What's your new PR?", timestamp: Date().addingTimeInterval(-172000)),
                     Comment(user: user3, content: "Congrats! Keep up the great work!", timestamp: Date().addingTimeInterval(-171000))
-                ]
+                ],
+                isLikedByCurrentUser: false
             )
         ]
     }
@@ -261,10 +301,19 @@ struct FeedTabButton: View {
 }
 
 struct PostCard: View {
+    @EnvironmentObject var authManager: AuthenticationManager
     @State private var showingComments = false
     @State private var showingVideoPlayer = false
     @State private var videoPlayer: AVPlayer?
-    let post: Post
+    @State private var showingAddComment = false
+    @State private var newCommentText = ""
+    @State private var postState: Post
+    
+    init(post: Post) {
+        self._postState = State(initialValue: post)
+    }
+    
+    var post: Post { postState }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -384,11 +433,11 @@ struct PostCard: View {
             // Like and comment actions
             HStack {
                 Button(action: {
-                    // Like action
+                    Task { await toggleLike() }
                 }) {
                     HStack {
-                        Image(systemName: "heart")
-                            .foregroundColor(Color(AppSettings.Colors.primary))
+                        Image(systemName: post.isLikedByCurrentUser ? "heart.fill" : "heart")
+                            .foregroundColor(post.isLikedByCurrentUser ? .red : Color(AppSettings.Colors.primary))
                         Text("\(post.likes)")
                             .font(.custom(AppSettings.Fonts.body, size: 14))
                             .foregroundColor(.secondary)
@@ -421,23 +470,30 @@ struct PostCard: View {
             .padding(.top, 4)
             
             // Comments section if expanded
-            if showingComments && !post.comments.isEmpty {
+            if showingComments {
                 VStack(alignment: .leading, spacing: 12) {
                     Divider()
                     
+                    // Show existing comments
                     ForEach(post.comments) { comment in
                         CommentView(comment: comment)
                     }
                     
-                    // Add comment button
-                    HStack {
-                        Image(systemName: "person.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.secondary)
-                        
-                        Text("Add a comment...")
-                            .font(.custom(AppSettings.Fonts.body, size: 14))
-                            .foregroundColor(.secondary)
+                    // Add comment section
+                    VStack(spacing: 8) {
+                        HStack {
+                            Image(systemName: "person.circle.fill")
+                                .font(.system(size: 24))
+                                .foregroundColor(.secondary)
+                            
+                            TextField("Add a comment...", text: $newCommentText)
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                            
+                            Button("Post") {
+                                Task { await addComment() }
+                            }
+                            .disabled(newCommentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
                     }
                     .padding(.top, 8)
                 }
@@ -485,6 +541,78 @@ struct PostCard: View {
             return "figure.strengthtraining.traditional"
         case .basketball:
             return "basketball.fill"
+        }
+    }
+    
+    private func toggleLike() async {
+        guard let userId = authManager.currentUser?.id.uuidString,
+              let postId = post.databaseId else {
+            print("⚠️ Missing user ID or post database ID")
+            return
+        }
+        
+        print("🔄 toggleLike: Starting toggle for user \(userId) on post \(postId)")
+        print("🔄 toggleLike: Current isLikedByCurrentUser = \(post.isLikedByCurrentUser)")
+        print("🔄 toggleLike: Current likes count = \(post.likes)")
+        
+        do {
+            let postService = PostService()
+            
+            if post.isLikedByCurrentUser {
+                // Unlike the post
+                print("👎 toggleLike: Attempting to unlike post...")
+                try await postService.unlikePost(postId: postId, userId: userId)
+                await MainActor.run {
+                    print("✅ toggleLike: Unlike successful, updating UI state")
+                    postState.isLikedByCurrentUser = false
+                    postState.likes = max(0, postState.likes - 1)
+                    print("📊 toggleLike: New state - isLiked: \(postState.isLikedByCurrentUser), likes: \(postState.likes)")
+                }
+            } else {
+                // Like the post
+                print("👍 toggleLike: Attempting to like post...")
+                try await postService.likePost(postId: postId, userId: userId)
+                await MainActor.run {
+                    print("✅ toggleLike: Like successful, updating UI state")
+                    postState.isLikedByCurrentUser = true
+                    postState.likes += 1
+                    print("📊 toggleLike: New state - isLiked: \(postState.isLikedByCurrentUser), likes: \(postState.likes)")
+                }
+            }
+        } catch {
+            print("❌ Error toggling like: \(error.localizedDescription)")
+            print("🔍 Error details: \(error)")
+        }
+    }
+    
+    private func addComment() async {
+        guard let userId = authManager.currentUser?.id.uuidString,
+              let postId = post.databaseId,
+              let currentUser = authManager.currentUser else {
+            print("⚠️ Missing user ID, post database ID, or current user")
+            return
+        }
+        
+        let commentText = newCommentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !commentText.isEmpty else { return }
+        
+        do {
+            let postService = PostService()
+            try await postService.addComment(postId: postId, userId: userId, content: commentText)
+            
+            // Create the new comment to add to the UI
+            let newComment = Comment(
+                user: currentUser,
+                content: commentText,
+                timestamp: Date()
+            )
+            
+            await MainActor.run {
+                postState.comments.append(newComment)
+                newCommentText = ""
+            }
+        } catch {
+            print("❌ Error adding comment: \(error.localizedDescription)")
         }
     }
 }
@@ -928,6 +1056,7 @@ struct NewPostView: View {
                 // Only create and show the post in UI after successful database save
                 await MainActor.run {
                     let newPost = Post(
+                        databaseId: postId.uuidString,
                         user: currentUser,
                         content: postText,
                         image: nil,
@@ -936,7 +1065,8 @@ struct NewPostView: View {
                         workoutType: selectedWorkoutType,
                         challengeId: selectedChallenge,
                         likes: 0,
-                        comments: []
+                        comments: [],
+                        isLikedByCurrentUser: false
                     )
                     
                     onPost(newPost)
@@ -1049,9 +1179,36 @@ struct FindPartnersView: View {
     private func loadRecommendedPartners() {
         // Sample data for demo purposes
         recommendedPartners = [
-            User(id: UUID(), username: "James", email: "james@example.com", created_at: Date(), totalWorkouts: 32, completedChallenges: 7, totalPoints: 2100),
-            User(id: UUID(), username: "Olivia", email: "olivia@example.com", created_at: Date(), totalWorkouts: 45, completedChallenges: 12, totalPoints: 3000),
-            User(id: UUID(), username: "Noah", email: "noah@example.com", created_at: Date(), totalWorkouts: 28, completedChallenges: 5, totalPoints: 1800)
+            User(
+                id: UUID(), 
+                username: "James", 
+                email: "james@example.com", 
+                created_at: Date(), 
+                totalWorkouts: 32, 
+                completedChallenges: 7, 
+                challengePoints: 700,
+                workoutPoints: 1400
+            ),
+            User(
+                id: UUID(), 
+                username: "Olivia", 
+                email: "olivia@example.com", 
+                created_at: Date(), 
+                totalWorkouts: 45, 
+                completedChallenges: 12, 
+                challengePoints: 1200,
+                workoutPoints: 1800
+            ),
+            User(
+                id: UUID(), 
+                username: "Noah", 
+                email: "noah@example.com", 
+                created_at: Date(), 
+                totalWorkouts: 28, 
+                completedChallenges: 5, 
+                challengePoints: 500,
+                workoutPoints: 1300
+            )
         ]
     }
 }

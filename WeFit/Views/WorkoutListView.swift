@@ -81,28 +81,37 @@ struct WorkoutListView: View {
 
 struct WorkoutCard: View {
     let workout: Workout
+    @State private var showingWorkoutDetail = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: iconForWorkoutType(workout.workout_type))
-                    .font(.title2)
-                Text(workout.workout_type.rawValue.capitalized)
-                    .font(.headline)
-                Spacer()
-                Text("\(Int(workout.points)) pts")
+        Button(action: {
+            showingWorkoutDetail = true
+        }) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: iconForWorkoutType(workout.workout_type))
+                        .font(.title2)
+                    Text(workout.workout_type.rawValue.capitalized)
+                        .font(.headline)
+                    Spacer()
+                    Text("\(Int(workout.points)) pts")
+                        .font(.subheadline)
+                        .foregroundColor(.green)
+                }
+                
+                Text(workout.workout_date.formatted(date: .abbreviated, time: .shortened))
                     .font(.subheadline)
-                    .foregroundColor(.green)
+                    .foregroundColor(.secondary)
             }
-            
-            Text(workout.workout_date.formatted(date: .abbreviated, time: .shortened))
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(10)
+            .shadow(radius: 2)
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(radius: 2)
+        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingWorkoutDetail) {
+            WorkoutDetailView(workoutId: workout.id.uuidString)
+        }
     }
     
     private func iconForWorkoutType(_ type: WorkoutType) -> String {

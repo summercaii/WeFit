@@ -135,7 +135,7 @@ class PostService {
     // MARK: - Post Methods
     
     // Fetch posts from the database
-    func fetchPosts(limit: Int = 20) async throws -> [Post] {
+    func fetchPosts(limit: Int = 20, currentUserId: String? = nil) async throws -> [Post] {
         let response = try await client
             .from("posts")
             .select("*, users(*), workouts(*)")
@@ -239,8 +239,21 @@ class PostService {
                 )
             }
             
+            // Fetch likes count for this post
+            let likesCount = try await fetchLikesCount(postId: joinedPost.id)
+            
+            // Fetch comments for this post
+            let comments = try await fetchComments(postId: joinedPost.id)
+            
+            // Check if current user liked this post
+            var isLikedByCurrentUser = false
+            if let currentUserId = currentUserId {
+                isLikedByCurrentUser = try await isPostLikedByUser(postId: joinedPost.id, userId: currentUserId)
+            }
+            
             // Create the post
             let post = Post(
+                databaseId: joinedPost.id, // Include database ID
                 user: user,
                 content: joinedPost.content,
                 image: nil, // Legacy field
@@ -248,8 +261,9 @@ class PostService {
                 timestamp: decodeDate(from: joinedPost.created_at),
                 workoutType: workoutType,
                 challengeId: challengeId, // No challenge support in current DB schema
-                likes: 0, // No likes support in current DB schema
-                comments: [] // Comments would require another join
+                likes: likesCount,
+                comments: comments,
+                isLikedByCurrentUser: isLikedByCurrentUser
             )
             
             posts.append(post)
@@ -421,5 +435,293 @@ class PostService {
     // Legacy method for backward compatibility
     func savePost(userId: UUID, content: String, workoutId: UUID? = nil, workoutType: String? = nil) async throws -> UUID {
         return try await savePost(userId: userId, content: content, workoutId: workoutId, workoutType: workoutType, media: nil)
+    }
+    
+    // MARK: - Like Methods
+    
+    func likePost(postId: String, userId: String) async throws {
+        print("❤️ PostService: User \(userId) liking post \(postId)")
+        
+        // Ensure we have valid UUIDs
+        guard UUID(uuidString: postId) != nil else {
+            print("❌ PostService: Invalid post ID format: \(postId)")
+            throw NSError(domain: "PostService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid post ID format"])
+        }
+        
+        guard UUID(uuidString: userId) != nil else {
+            print("❌ PostService: Invalid user ID format: \(userId)")
+            throw NSError(domain: "PostService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid user ID format"])
+        }
+        
+        // Check if user has already liked this post (fresh check from database)
+        print("🔍 PostService: Checking for existing likes...")
+        let existingLike = try await client
+            .from("likes")
+            .select("id")
+            .eq("post_id", value: postId)
+            .eq("user_id", value: userId)
+            .execute()
+        
+        // Check if like already exists using data content instead of count
+        let dataString = String(data: existingLike.data, encoding: .utf8) ?? ""
+        let hasExistingLike = !dataString.contains("[]") && !dataString.isEmpty && dataString != "[]"
+        
+        print("📊 PostService: Existing like check - data: \(dataString)")
+        print("📊 PostService: Has existing like: \(hasExistingLike)")
+        
+        if hasExistingLike {
+            print("⚠️ PostService: User has already liked this post")
+            throw NSError(domain: "PostService", code: 1, userInfo: [NSLocalizedDescriptionKey: "You have already liked this post"])
+        }
+        
+        print("✅ PostService: No existing likes found, proceeding to add like...")
+        
+        // Add the like
+        struct LikeData: Encodable {
+            let post_id: String
+            let user_id: String
+        }
+        
+        let likeData = LikeData(post_id: postId, user_id: userId)
+        
+        let insertResult = try await client
+            .from("likes")
+            .insert([likeData])
+            .execute()
+        
+        print("✅ PostService: Successfully liked post")
+    }
+    
+    // MARK: - Debug Methods
+    
+    func debugDeleteLike(postId: String, userId: String) async throws {
+        print("🔍 DEBUG: Testing basic delete operation...")
+        
+        // First, check what exists
+        let existingLikes = try await client
+            .from("likes")
+            .select("*")
+            .eq("post_id", value: postId)
+            .eq("user_id", value: userId)
+            .execute()
+        
+        print("🔍 DEBUG: Found existing likes: \(String(data: existingLikes.data, encoding: .utf8) ?? "Unable to decode")")
+        
+        // Try a raw delete without additional checks
+        let deleteResult = try await client
+            .from("likes")
+            .delete()
+            .eq("post_id", value: postId)
+            .eq("user_id", value: userId)
+            .execute()
+        
+        print("🔍 DEBUG: Delete result: \(String(data: deleteResult.data, encoding: .utf8) ?? "Unable to decode")")
+        print("🔍 DEBUG: Delete count: \(deleteResult.count ?? -1)")
+        
+        // Check what's left
+        let remainingLikes = try await client
+            .from("likes")
+            .select("*")
+            .eq("post_id", value: postId)
+            .eq("user_id", value: userId)
+            .execute()
+        
+        print("🔍 DEBUG: Remaining likes: \(String(data: remainingLikes.data, encoding: .utf8) ?? "Unable to decode")")
+    }
+
+    func unlikePost(postId: String, userId: String) async throws {
+        print("💔 PostService: User \(userId) unliking post \(postId)")
+        
+        // Ensure we have valid UUIDs
+        guard UUID(uuidString: postId) != nil else {
+            print("❌ PostService: Invalid post ID format: \(postId)")
+            throw NSError(domain: "PostService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid post ID format"])
+        }
+        
+        guard UUID(uuidString: userId) != nil else {
+            print("❌ PostService: Invalid user ID format: \(userId)")
+            throw NSError(domain: "PostService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid user ID format"])
+        }
+        
+        // First, verify the like exists before trying to delete it
+        let existingLike = try await client
+            .from("likes")
+            .select("id")
+            .eq("post_id", value: postId)
+            .eq("user_id", value: userId)
+            .execute()
+        
+        print("🔍 PostService: Existing like check - data: \(String(data: existingLike.data, encoding: .utf8) ?? "Unable to decode")")
+        print("🔍 PostService: Existing like check - count: \(existingLike.count ?? -1)")
+        
+        // Parse the response to see if we actually found a like - use data.isEmpty instead of count
+        let dataString = String(data: existingLike.data, encoding: .utf8) ?? ""
+        let hasExistingLike = !dataString.contains("[]") && !dataString.isEmpty && dataString != "[]"
+        
+        if !hasExistingLike || dataString == "[]" {
+            print("⚠️ PostService: No like found to delete (data is empty)")
+            throw NSError(domain: "PostService", code: 2, userInfo: [NSLocalizedDescriptionKey: "You haven't liked this post"])
+        }
+        
+        print("🔍 PostService: Found existing like, proceeding to delete...")
+        
+        // Delete the like - using direct UUID matching
+        let deleteResult = try await client
+            .from("likes")
+            .delete()
+            .eq("post_id", value: postId)
+            .eq("user_id", value: userId)
+            .execute()
+        
+        print("🔍 PostService: Delete result data: \(String(data: deleteResult.data, encoding: .utf8) ?? "Unable to decode")")
+        print("🔍 PostService: Delete result count: \(deleteResult.count ?? -1)")
+        
+        // Verify the deletion was successful by checking if the like still exists
+        let verificationCheck = try await client
+            .from("likes")
+            .select("id")
+            .eq("post_id", value: postId)
+            .eq("user_id", value: userId)
+            .execute()
+        
+        print("🔍 PostService: Verification check data: \(String(data: verificationCheck.data, encoding: .utf8) ?? "Unable to decode")")
+        print("🔍 PostService: Verification check count: \(verificationCheck.count ?? -1)")
+        
+        // Check if any likes remain after deletion
+        let verificationDataString = String(data: verificationCheck.data, encoding: .utf8) ?? ""
+        let likesStillExist = !verificationDataString.contains("[]") && !verificationDataString.isEmpty && verificationDataString != "[]"
+        
+        if likesStillExist {
+            print("❌ PostService: Failed to delete like - records still exist after deletion attempt")
+            print("🔍 PostService: Remaining record details: \(verificationDataString)")
+            throw NSError(domain: "PostService", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to unlike post - record still exists"])
+        }
+        
+        print("✅ PostService: Successfully unliked post and verified deletion")
+    }
+    
+    func fetchLikesCount(postId: String) async throws -> Int {
+        let response = try await client
+            .from("likes")
+            .select("id", count: .exact)
+            .eq("post_id", value: postId)
+            .execute()
+        
+        return response.count ?? 0
+    }
+    
+    func isPostLikedByUser(postId: String, userId: String) async throws -> Bool {
+        let response = try await client
+            .from("likes")
+            .select("id")
+            .eq("post_id", value: postId)
+            .eq("user_id", value: userId)
+            .execute()
+        
+        // Check if like exists using data content instead of count
+        let dataString = String(data: response.data, encoding: .utf8) ?? ""
+        let hasLike = !dataString.contains("[]") && !dataString.isEmpty && dataString != "[]"
+        
+        return hasLike
+    }
+    
+    // MARK: - Comment Methods
+    
+    func addComment(postId: String, userId: String, content: String) async throws {
+        print("💬 PostService: User \(userId) commenting on post \(postId)")
+        
+        struct CommentData: Encodable {
+            let post_id: String
+            let user_id: String
+            let content: String
+        }
+        
+        let commentData = CommentData(post_id: postId, user_id: userId, content: content)
+        
+        _ = try await client
+            .from("comments")
+            .insert([commentData])
+            .execute()
+        
+        print("✅ PostService: Successfully added comment")
+    }
+    
+    func fetchComments(postId: String) async throws -> [Comment] {
+        let response = try await client
+            .from("comments")
+            .select("*, users(*)")
+            .eq("post_id", value: postId)
+            .order("created_at", ascending: true)
+            .execute()
+        
+        struct CommentData: Decodable {
+            let id: String
+            let content: String
+            let created_at: String
+            let users: UserData
+            
+            struct UserData: Decodable {
+                let id: String
+                let username: String
+                let email: String
+                let created_at: String
+            }
+        }
+        
+        let commentDataArray = try DatabaseManager.decoder.decode([CommentData].self, from: response.data)
+        
+        return commentDataArray.map { commentData in
+            let user = User(
+                id: UUID(uuidString: commentData.users.id) ?? UUID(),
+                username: commentData.users.username,
+                email: commentData.users.email,
+                created_at: decodeDate(from: commentData.users.created_at)
+            )
+            
+            return Comment(
+                user: user,
+                content: commentData.content,
+                timestamp: decodeDate(from: commentData.created_at)
+            )
+        }
+    }
+    
+    func fetchCommentsCount(postId: String) async throws -> Int {
+        let response = try await client
+            .from("comments")
+            .select("id", count: .exact)
+            .eq("post_id", value: postId)
+            .execute()
+        
+        return response.count ?? 0
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func decodeDate(from dateString: String) -> Date {
+        // Format 1: With microseconds (e.g., "2025-05-20T06:43:15.966212+00:00")
+        let fullFormatter = DateFormatter()
+        fullFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSSSSZZZZZ"
+        
+        if let date = fullFormatter.date(from: dateString) {
+            return date
+        }
+        
+        // Format 2: Without microseconds (e.g., "2025-06-01T20:51:44+00:00")
+        let simpleFormatter = DateFormatter()
+        simpleFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
+        
+        if let date = simpleFormatter.date(from: dateString) {
+            return date
+        }
+        
+        // Format 3: ISO8601 fallback
+        if let date = ISO8601DateFormatter().date(from: dateString) {
+            return date
+        }
+        
+        // If all formats fail, return current date
+        print("Warning: Could not parse date string: \(dateString)")
+        return Date()
     }
 } 

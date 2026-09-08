@@ -115,4 +115,71 @@ class WorkoutService {
             .insert([exercise])
             .execute()
     }
+    
+    // Fetch detailed workout information
+    func fetchWorkoutDetails(workoutId: String) async throws -> Workout? {
+        print("🔍 WorkoutService: Fetching detailed workout for ID: \(workoutId)")
+        
+        // First, fetch the base workout
+        let workoutResponse = try await client
+            .from("workouts")
+            .select()
+            .eq("id", value: workoutId)
+            .execute()
+        
+        let workouts = try DatabaseManager.decoder.decode([Workout].self, from: workoutResponse.data)
+        guard var workout = workouts.first else {
+            print("❌ No workout found with ID: \(workoutId)")
+            return nil
+        }
+        
+        // Fetch details based on workout type
+        switch workout.workout_type {
+        case .basketball:
+            workout.basketballDetails = try await fetchBasketballDetails(workoutId: workoutId)
+        case .running:
+            workout.runningDetails = try await fetchRunningDetails(workoutId: workoutId)
+        case .weightlifting:
+            workout.weightliftingDetails = try await fetchWeightliftingDetails(workoutId: workoutId)
+        }
+        
+        print("✅ Successfully fetched detailed workout data")
+        return workout
+    }
+    
+    // Fetch basketball workout details
+    private func fetchBasketballDetails(workoutId: String) async throws -> BasketballWorkoutDetails? {
+        let response = try await client
+            .from("basketball_workout_details")
+            .select()
+            .eq("workout_id", value: workoutId)
+            .execute()
+        
+        let details = try DatabaseManager.decoder.decode([BasketballWorkoutDetails].self, from: response.data)
+        return details.first
+    }
+    
+    // Fetch running workout details
+    private func fetchRunningDetails(workoutId: String) async throws -> RunningWorkoutDetails? {
+        let response = try await client
+            .from("running_workout_details")
+            .select()
+            .eq("workout_id", value: workoutId)
+            .execute()
+        
+        let details = try DatabaseManager.decoder.decode([RunningWorkoutDetails].self, from: response.data)
+        return details.first
+    }
+    
+    // Fetch weightlifting workout details
+    private func fetchWeightliftingDetails(workoutId: String) async throws -> WeightliftingWorkoutDetails? {
+        let response = try await client
+            .from("weightlifting_workout_details")
+            .select()
+            .eq("workout_id", value: workoutId)
+            .execute()
+        
+        let details = try DatabaseManager.decoder.decode([WeightliftingWorkoutDetails].self, from: response.data)
+        return details.first
+    }
 } 

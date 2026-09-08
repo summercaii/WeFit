@@ -216,7 +216,8 @@ class AuthenticationManager: ObservableObject {
             let stats = try await userService.fetchUserStats(userId: userId.uuidString)
             user.totalWorkouts = stats.workouts
             user.completedChallenges = stats.challenges
-            user.totalPoints = stats.points
+            // Note: totalPoints is now computed from workoutPoints + challengePoints
+            // which are already fetched from the database in fetchUser()
             print("✅ fetchCurrentUser: User stats fetched successfully")
             
             await MainActor.run {

@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject var authManager: AuthenticationManager
     @State private var recentWorkouts: [Workout] = []
+    @State private var showingCreateGoal = false
     
     var body: some View {
         NavigationView {
@@ -37,6 +38,13 @@ struct HomeView: View {
                     loadRecentWorkouts()
                 }
             }
+        }
+        .sheet(isPresented: $showingCreateGoal) {
+            CreateGoalView(isPresented: $showingCreateGoal) { newGoal in
+                // Goal created successfully - could show a success message or refresh goals
+                print("✅ New goal created: \(newGoal.target)")
+            }
+            .environmentObject(authManager)
         }
     }
     
@@ -113,17 +121,25 @@ struct HomeView: View {
             }
             .buttonStyle(PlainButtonStyle())
             
-            QuickAccessButton(
-                title: "Join Challenge",
-                icon: "trophy.fill",
-                color: Color(AppSettings.Colors.secondary)
-            )
+            NavigationLink(destination: ChallengesView().environmentObject(authManager)) {
+                QuickAccessButton(
+                    title: "Join Challenge",
+                    icon: "trophy.fill",
+                    color: Color(AppSettings.Colors.secondary)
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
             
-            QuickAccessButton(
-                title: "Find Friends",
-                icon: "person.2.fill",
-                color: .orange
-            )
+            Button(action: {
+                showingCreateGoal = true
+            }) {
+                QuickAccessButton(
+                    title: "Create Goal",
+                    icon: "target",
+                    color: .orange
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
         }
     }
     
@@ -187,36 +203,45 @@ struct StatCard: View {
 
 struct RecentWorkoutCard: View {
     let workout: Workout
+    @State private var showingWorkoutDetail = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: iconForWorkoutType(workout.workout_type))
-                    .font(.system(size: 22))
-                    .foregroundColor(Color(AppSettings.Colors.primary))
+        Button(action: {
+            showingWorkoutDetail = true
+        }) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Image(systemName: iconForWorkoutType(workout.workout_type))
+                        .font(.system(size: 22))
+                        .foregroundColor(Color(AppSettings.Colors.primary))
+                    
+                    Spacer()
+                    
+                    Text("\(Int(workout.points)) pts")
+                        .font(.custom(AppSettings.Fonts.body, size: 14))
+                        .foregroundColor(Color(AppSettings.Colors.secondary))
+                }
                 
                 Spacer()
                 
-                Text("\(Int(workout.points)) pts")
-                    .font(.custom(AppSettings.Fonts.body, size: 14))
-                    .foregroundColor(Color(AppSettings.Colors.secondary))
+                Text(workout.workout_type.rawValue.capitalized)
+                    .font(.custom(AppSettings.Fonts.title, size: 16))
+                    .foregroundColor(Color(AppSettings.Colors.text))
+                
+                Text(formattedDate(workout.workout_date))
+                    .font(.custom(AppSettings.Fonts.body, size: 12))
+                    .foregroundColor(.secondary)
             }
-            
-            Spacer()
-            
-            Text(workout.workout_type.rawValue.capitalized)
-                .font(.custom(AppSettings.Fonts.title, size: 16))
-                .foregroundColor(Color(AppSettings.Colors.text))
-            
-            Text(formattedDate(workout.workout_date))
-                .font(.custom(AppSettings.Fonts.body, size: 12))
-                .foregroundColor(.secondary)
+            .padding()
+            .frame(width: 160, height: 130)
+            .background(Color.white)
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
         }
-        .padding()
-        .frame(width: 160, height: 130)
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingWorkoutDetail) {
+            WorkoutDetailView(workoutId: workout.id.uuidString)
+        }
     }
     
     private func iconForWorkoutType(_ type: WorkoutType) -> String {

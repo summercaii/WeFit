@@ -9,7 +9,7 @@ class UserService {
     func fetchUser(userId: String) async throws -> User {
         let response = try await client
             .from("users")
-            .select()
+            .select("id, username, email, created_at, challenge_points, workout_points, completed_challenges, total_workouts")
             .eq("id", value: userId)
             .single()
             .execute()
@@ -139,5 +139,60 @@ class UserService {
             .execute()
         
         return (response?.count ?? 0) > 0
+    }
+    
+    // Sync user stats - recalculate and update challenge_points, workout_points, completed_challenges, total_workouts
+    func syncUserStats(userId: String) async throws {
+        print("🔄 UserService: Syncing stats for user: \(userId)")
+        
+        // Get calculated stats
+        let stats = try await fetchUserStats(userId: userId)
+        
+        // Calculate workout points from workouts table
+        let workoutsResponse = try await client
+            .from("workouts")
+            .select("points")
+            .eq("user_id", value: userId)
+            .execute()
+        
+        struct WorkoutPoints: Decodable {
+            let points: Double
+        }
+        
+        let workouts = try DatabaseManager.decoder.decode([WorkoutPoints].self, from: workoutsResponse.data)
+        let workoutPoints = workouts.reduce(0) { $0 + $1.points }
+        
+        // Calculate challenge points from completed challenges
+        let challengesResponse = try await client
+            .from("user_challenges")
+            .select("challenges(points_reward)")
+            .eq("user_id", value: userId)
+            .eq("status", value: "completed")
+            .execute()
+        
+        struct ChallengePointsWrapper: Decodable {
+            let challenges: ChallengePoints?
+            
+            struct ChallengePoints: Decodable {
+                let points_reward: Double
+            }
+        }
+        
+        let challengeData = try DatabaseManager.decoder.decode([ChallengePointsWrapper].self, from: challengesResponse.data)
+        let challengePoints = challengeData.compactMap { $0.challenges?.points_reward }.reduce(0, +)
+        
+        // Update the users table with calculated values
+        _ = try await client
+            .from("users")
+            .update([
+                "workout_points": workoutPoints,
+                "challenge_points": challengePoints,
+                "completed_challenges": Double(stats.challenges),
+                "total_workouts": Double(stats.workouts)
+            ])
+            .eq("id", value: userId)
+            .execute()
+        
+        print("✅ UserService: Successfully synced stats - Workout Points: \(workoutPoints), Challenge Points: \(challengePoints), Total: \(workoutPoints + challengePoints)")
     }
 } 

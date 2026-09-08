@@ -11,7 +11,7 @@ import Supabase
 import SwiftUI
 
 
-struct DatabaseManager {
+struct TestDatabaseManager {
     static let supabaseURL = "https://vqurobjkazktguvtzive.supabase.co" // <-- Replace with your URL
     static let supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxdXJvYmprYXprdGd1dnR6aXZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzk4MzIyMjYsImV4cCI6MjA1NTQwODIyNn0.5dUxDyi2HlfKhdxThXkZCIFVYs-HOmqIjtKp1y-9IDU" // <-- Replace with your anon/public key
 
@@ -33,7 +33,7 @@ func addTestUser() {
             let randomString = UUID().uuidString.prefix(8)
             let newUser = NewUser(username: "testuser\(randomString)", email: "test\(randomString)@example.com")
             
-            let response = try await DatabaseManager.client
+            let response = try await TestDatabaseManager.client
                 .from("users")
                 .insert([newUser])
                 .execute()
@@ -71,7 +71,7 @@ func testWeightliftingWorkoutDetails() {
             )
             
             print("🧪 Testing weightlifting workout details insert...")
-            let response = try await DatabaseManager.client
+            let response = try await TestDatabaseManager.client
                 .from("weightlifting_workout_details")
                 .insert([testDetails])
                 .execute()
@@ -108,7 +108,7 @@ func testRunningWorkoutDetails() {
             )
             
             print("🏃 Testing running workout details insert...")
-            let response = try await DatabaseManager.client
+            let response = try await TestDatabaseManager.client
                 .from("running_workout_details")
                 .insert([testDetails])
                 .execute()
@@ -151,7 +151,7 @@ func testPostCreation() {
             )
             
             print("📝 Attempting to insert test post...")
-            let response = try await DatabaseManager.client
+            let response = try await TestDatabaseManager.client
                 .from("posts")
                 .insert([testPost])
                 .execute()
@@ -176,7 +176,7 @@ func testPostRetrieval() {
         do {
             print("🔍 Testing post retrieval...")
             
-            let response = try await DatabaseManager.client
+            let response = try await TestDatabaseManager.client
                 .from("posts")
                 .select("*, users(*), workouts(*)")
                 .order("created_at", ascending: false)
@@ -204,7 +204,7 @@ func testPostCount() {
         do {
             print("🔢 Testing post count...")
             
-            let response = try await DatabaseManager.client
+            let response = try await TestDatabaseManager.client
                 .from("posts")
                 .select("*", count: .exact)
                 .execute()
@@ -245,7 +245,7 @@ func testMultiplePostCreation() {
                 )
                 
                 print("📝 Creating test post #\(i)...")
-                let response = try await DatabaseManager.client
+                let response = try await TestDatabaseManager.client
                     .from("posts")
                     .insert([testPost])
                     .execute()
@@ -295,7 +295,7 @@ func testPostCreationWithWorkoutType() {
             )
             
             print("📝 Attempting to insert test post with workout_type...")
-            let response = try await DatabaseManager.client
+            let response = try await TestDatabaseManager.client
                 .from("posts")
                 .insert([testPost])
                 .execute()
@@ -346,7 +346,7 @@ func testAuthenticationState() {
             print("🔍 Testing authentication state...")
             
             // Check current session
-            let session = try await DatabaseManager.client.auth.session
+            let session = try await TestDatabaseManager.client.auth.session
             print("✅ Session exists!")
             print("   - User ID: \(session.user.id)")
             print("   - Email: \(session.user.email ?? "N/A")")
@@ -355,7 +355,7 @@ func testAuthenticationState() {
             
             // Test if we can make authenticated API calls
             print("🔍 Testing authenticated API call...")
-            let response = try await DatabaseManager.client
+            let response = try await TestDatabaseManager.client
                 .from("users")
                 .select("*")
                 .eq("id", value: session.user.id.uuidString)
@@ -407,7 +407,7 @@ func checkUserExists() {
             print("🔍 Checking if user exists in database...")
             
             // Check for the user by email
-            let response = try await DatabaseManager.client
+            let response = try await TestDatabaseManager.client
                 .from("users")
                 .select("*")
                 .eq("email", value: "shawheeng23@gmail.com")
@@ -422,7 +422,7 @@ func checkUserExists() {
             
             // Also check auth users table if accessible
             print("🔍 Checking auth.users table...")
-            let authResponse = try await DatabaseManager.client.auth.admin.listUsers()
+            let authResponse = try await TestDatabaseManager.client.auth.admin.listUsers()
             print("📊 Found \(authResponse.users.count) auth users")
             
             for user in authResponse.users {
@@ -454,7 +454,7 @@ func testDirectAuthentication() {
             
             print("🔍 Attempting to sign in with email: \(email)")
             
-            let session = try await DatabaseManager.client.auth.signIn(
+            let session = try await TestDatabaseManager.client.auth.signIn(
                 email: email,
                 password: password
             )
@@ -465,7 +465,7 @@ func testDirectAuthentication() {
             print("✅ Email verified: \(session.user.emailConfirmedAt != nil)")
             
             // Sign out after test
-            try await DatabaseManager.client.auth.signOut()
+            try await TestDatabaseManager.client.auth.signOut()
             print("🚪 Signed out after test")
             
         } catch {
