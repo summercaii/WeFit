@@ -64,32 +64,70 @@ class UserService {
     
     // Fetch user stats
     func fetchUserStats(userId: String) async throws -> (workouts: Int, challenges: Int, points: Double) {
-        // This is where you'd implement calls to fetch workout count, completed challenges, etc.
-        // For example:
+        print("🔍 UserService: Fetching user stats for user_id: \(userId)")
         
-        // Fetch workout count
+        // Fetch workout count and sum of points from workouts
         let workoutsResponse = try await client
             .from("workouts")
-            .select("*", count: .exact)
+            .select("points", count: .exact)
             .eq("user_id", value: userId)
             .execute()
         
         let workoutsCount = workoutsResponse.count ?? 0
+        print("📊 UserService: Found \(workoutsCount) workouts")
         
-        // Fetch completed challenges
+        // Parse workout points from response
+        var workoutPoints: Double = 0
+        if let jsonData = String(data: workoutsResponse.data, encoding: .utf8) {
+            print("📋 Raw workouts response: \(jsonData)")
+            
+            // Decode the workouts to sum up points
+            struct WorkoutPoints: Decodable {
+                let points: Double
+            }
+            
+            if let workoutsData = try? JSONDecoder().decode([WorkoutPoints].self, from: workoutsResponse.data) {
+                workoutPoints = workoutsData.reduce(0) { $0 + $1.points }
+                print("💰 Total workout points: \(workoutPoints)")
+            }
+        }
+        
+        // Fetch completed challenges count and sum of points_reward
         let challengesResponse = try await client
             .from("user_challenges")
-            .select("*", count: .exact)
+            .select("challenges(points_reward)", count: .exact)
             .eq("user_id", value: userId)
             .eq("status", value: "completed")
             .execute()
         
         let challengesCount = challengesResponse.count ?? 0
+        print("🏆 UserService: Found \(challengesCount) completed challenges")
         
-        // Calculate points (this is just an example, adjust based on your app's logic)
-        let points = Double(workoutsCount * 10 + challengesCount * 50)
+        // Parse challenge points from response
+        var challengePoints: Double = 0
+        if let jsonData = String(data: challengesResponse.data, encoding: .utf8) {
+            print("📋 Raw challenges response: \(jsonData)")
+            
+            // Decode the challenges to sum up points_reward
+            struct ChallengePointsWrapper: Decodable {
+                let challenges: ChallengePoints?
+                
+                struct ChallengePoints: Decodable {
+                    let points_reward: Double
+                }
+            }
+            
+            if let challengesData = try? JSONDecoder().decode([ChallengePointsWrapper].self, from: challengesResponse.data) {
+                challengePoints = challengesData.compactMap { $0.challenges?.points_reward }.reduce(0, +)
+                print("💰 Total challenge points: \(challengePoints)")
+            }
+        }
         
-        return (workouts: workoutsCount, challenges: challengesCount, points: points)
+        // Calculate total points from actual database values
+        let totalPoints = workoutPoints + challengePoints
+        print("💯 UserService: Total points calculated: \(totalPoints) (workouts: \(workoutPoints) + challenges: \(challengePoints))")
+        
+        return (workouts: workoutsCount, challenges: challengesCount, points: totalPoints)
     }
     
     // Check if username is taken

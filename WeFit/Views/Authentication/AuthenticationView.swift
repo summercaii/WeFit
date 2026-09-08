@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AuthenticationView: View {
     @State private var isSignUp = false
+    @State private var showDebugSheet = false
     
     var body: some View {
         ZStack {
@@ -55,9 +56,22 @@ struct AuthenticationView: View {
                     .padding(.horizontal)
                 }
                 .padding(.bottom, 30)
+                
+                // Debug button (only in development)
+                #if DEBUG
+                Button("🐛 Debug Database") {
+                    showDebugSheet = true
+                }
+                .foregroundColor(.white.opacity(0.7))
+                .font(.caption)
+                .padding(.bottom, 20)
+                #endif
             }
         }
         .animation(.easeInOut, value: isSignUp)
+        .sheet(isPresented: $showDebugSheet) {
+            DatabaseTestView()
+        }
     }
 }
 
@@ -164,10 +178,26 @@ struct SignInView: View {
             }
             .foregroundColor(.appPrimary)
         }
-        .alert("Error", isPresented: $authManager.showError) {
-            Button("OK", role: .cancel) {}
+        .alert(alertTitle, isPresented: $authManager.showError) {
+            Button("OK", role: .cancel) {
+                // If email verification is required, navigate back to login
+                if authManager.authError == .emailVerificationRequired {
+                    withAnimation {
+                        isSignUp = false
+                    }
+                }
+            }
         } message: {
             Text(authManager.authError?.message ?? "Unknown error")
+        }
+    }
+    
+    private var alertTitle: String {
+        switch authManager.authError {
+        case .emailVerificationRequired:
+            return "Email Verification Required"
+        default:
+            return "Error"
         }
     }
     
@@ -238,10 +268,26 @@ struct SignUpView: View {
             }
             .foregroundColor(.appPrimary)
         }
-        .alert("Error", isPresented: $authManager.showError) {
-            Button("OK", role: .cancel) {}
+        .alert(alertTitle, isPresented: $authManager.showError) {
+            Button("OK", role: .cancel) {
+                // If email verification is required, navigate back to login
+                if authManager.authError == .emailVerificationRequired {
+                    withAnimation {
+                        isSignUp = false
+                    }
+                }
+            }
         } message: {
             Text(authManager.authError?.message ?? "Unknown error")
+        }
+    }
+    
+    private var alertTitle: String {
+        switch authManager.authError {
+        case .emailVerificationRequired:
+            return "Email Verification Required"
+        default:
+            return "Error"
         }
     }
     

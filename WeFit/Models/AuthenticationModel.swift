@@ -6,6 +6,7 @@ enum AuthenticationError: Error {
     case emailAlreadyExists
     case usernameAlreadyExists
     case networkError
+    case emailVerificationRequired
     case unknown
     
     var message: String {
@@ -18,6 +19,8 @@ enum AuthenticationError: Error {
             return "This username is already taken"
         case .networkError:
             return "Unable to connect to server"
+        case .emailVerificationRequired:
+            return "Please check your email and click the verification link to complete your account setup"
         case .unknown:
             return "An unknown error occurred"
         }
@@ -35,6 +38,59 @@ class AuthenticationManager: ObservableObject {
     private let client = DatabaseManager.client
     let userService = UserService()
 
+    init() {
+        // Check for existing session on app launch
+        Task {
+            await checkExistingSession()
+        }
+    }
+    
+    // Check if there's an existing valid session
+    private func checkExistingSession() async {
+        do {
+            // Get the current session
+            let session = try await client.auth.session
+            print("🔍 Checking existing session: \(session.user.id)")
+            
+            await MainActor.run {
+                self.isAuthenticated = true
+            }
+            
+            // Fetch user profile
+            try await fetchCurrentUser()
+            print("✅ Existing session restored successfully")
+            
+        } catch {
+            print("❌ No existing session found: \(error)")
+            await MainActor.run {
+                self.isAuthenticated = false
+                self.currentUser = nil
+            }
+        }
+    }
+    
+    // Verify current authentication status
+    func verifyAuthenticationStatus() async -> Bool {
+        do {
+            let session = try await client.auth.session
+            let isValid = session.accessToken.count > 0
+            print("🔍 Auth verification: Session valid = \(isValid), User ID = \(session.user.id)")
+            
+            await MainActor.run {
+                self.isAuthenticated = isValid
+            }
+            
+            return isValid
+        } catch {
+            print("❌ Auth verification failed: \(error)")
+            await MainActor.run {
+                self.isAuthenticated = false
+                self.currentUser = nil
+            }
+            return false
+        }
+    }
+    
     func signIn(email: String, password: String) async throws {
         do {
             let session = try await client.auth.signIn(email: email, password: password)
@@ -63,24 +119,39 @@ class AuthenticationManager: ObservableObject {
         }
         
         do {
-            print("Attempting auth signup with email: \(email)")
+            print("🔐 Attempting auth signup with email: \(email)")
             let authResponse = try await client.auth.signUp(email: email, password: password)
-            print("Auth signup successful, user ID: \(authResponse.user.id)")
+            print("✅ Auth signup successful, user ID: \(authResponse.user.id)")
             
-            // Give database trigger a moment to complete
+            // Wait for database trigger to complete
+            print("⏳ Waiting for database trigger to complete...")
             try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second delay
             
             // Update the username in the users table
-            // (since the trigger likely only creates with email)
+            print("📝 Updating username in users table...")
             try await updateUsername(for: email, to: username)
             
-            await MainActor.run {
-                isAuthenticated = true
+            // Important: Verify session is properly established before proceeding
+            print("🔍 Verifying session after signup...")
+            let isSessionValid = await verifyAuthenticationStatus()
+            
+            if isSessionValid {
+                print("✅ Session verified successfully")
+                try await fetchCurrentUser()
+                print("✅ User profile fetched successfully")
+            } else {
+                print("⚠️ Session not immediately available - user needs to verify email")
+                // This is normal behavior for email verification - not an error!
+                await MainActor.run {
+                    self.isAuthenticated = false
+                    self.authError = .emailVerificationRequired
+                    self.showError = true
+                }
+                throw AuthenticationError.emailVerificationRequired
             }
             
-            try await fetchCurrentUser()
         } catch let authError as AuthError {
-            print("Auth error during signup: \(authError)")
+            print("❌ Auth error during signup: \(authError)")
             await MainActor.run {
                 if "\(authError)".contains("Password should be at least") {
                     self.authError = .invalidCredentials
@@ -92,8 +163,12 @@ class AuthenticationManager: ObservableObject {
                 showError = true
             }
             throw authError
+        } catch AuthenticationError.emailVerificationRequired {
+            // Don't override this error - it's already set with proper message
+            print("📧 Email verification required - user has been notified")
+            throw AuthenticationError.emailVerificationRequired
         } catch {
-            print("Unexpected error during signup: \(error)")
+            print("❌ Unexpected error during signup: \(error)")
             await MainActor.run {
                 authError = .unknown
                 showError = true
@@ -114,7 +189,18 @@ class AuthenticationManager: ObservableObject {
 
     // Fetch the current user's profile from your public.users table
     private func fetchCurrentUser() async throws {
-        guard let userId = client.auth.currentUser?.id else { return }
+        // Verify we have a valid session first
+        guard let userId = client.auth.currentUser?.id else {
+            print("❌ fetchCurrentUser: No authenticated user found")
+            await MainActor.run {
+                self.isAuthenticated = false
+                self.currentUser = nil
+                self.isLoadingProfile = false
+            }
+            throw AuthenticationError.invalidCredentials
+        }
+        
+        print("🔍 fetchCurrentUser: Fetching profile for user ID: \(userId)")
         
         await MainActor.run {
             self.isLoadingProfile = true
@@ -123,21 +209,27 @@ class AuthenticationManager: ObservableObject {
         do {
             // Fetch the user profile directly with the string ID
             var user = try await userService.fetchUser(userId: userId.uuidString)
+            print("✅ fetchCurrentUser: User profile fetched successfully")
             
             // Fetch user stats
+            print("📊 fetchCurrentUser: Fetching user stats...")
             let stats = try await userService.fetchUserStats(userId: userId.uuidString)
             user.totalWorkouts = stats.workouts
             user.completedChallenges = stats.challenges
             user.totalPoints = stats.points
+            print("✅ fetchCurrentUser: User stats fetched successfully")
             
             await MainActor.run {
                 self.currentUser = user
                 self.isLoadingProfile = false
+                self.isAuthenticated = true
             }
         } catch {
-            print("Error fetching user profile: \(error)")
+            print("❌ fetchCurrentUser: Error fetching user profile: \(error)")
             await MainActor.run {
                 self.isLoadingProfile = false
+                // Don't reset authentication state on profile fetch failure
+                // The session might still be valid
             }
             throw error
         }
@@ -200,3 +292,4 @@ class AuthenticationManager: ObservableObject {
         }
     }
 }
+

@@ -313,6 +313,20 @@ struct WeightliftingWorkoutView: View {
         
         Task {
             do {
+                // Verify authentication session before saving
+                print("🔍 WeightliftingWorkout: Verifying authentication session...")
+                let isSessionValid = await authManager.verifyAuthenticationStatus()
+                
+                if !isSessionValid {
+                    await MainActor.run {
+                        isSaving = false
+                        alertMessage = "Your session has expired. Please sign out and log back in."
+                        showingAlert = true
+                    }
+                    return
+                }
+                
+                print("✅ WeightliftingWorkout: Session verified, saving workout...")
                 let workoutId = UUID()
                 
                 // Create main workout entry

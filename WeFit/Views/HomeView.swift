@@ -72,7 +72,7 @@ struct HomeView: View {
                 
                 Spacer()
                 
-                NavigationLink(destination: Text("All Activities")) {
+                NavigationLink(destination: WorkoutListView()) {
                     Text("View All")
                         .font(.custom(AppSettings.Fonts.body, size: 14))
                         .foregroundColor(Color(AppSettings.Colors.primary))

@@ -6,23 +6,27 @@ struct WorkoutListView: View {
     @State private var isLoading = false
     
     var body: some View {
-        VStack(spacing: 16) {
-            if isLoading {
-                ProgressView("Loading workouts...")
-                    .padding()
-            } else if workouts.isEmpty {
-                EmptyStateView(
-                    imageName: "figure.run",
-                    title: "No Workouts Yet",
-                    message: "Start tracking your fitness journey by adding your first workout!"
-                )
-            } else {
-                ForEach(workouts) { workout in
-                    WorkoutCard(workout: workout)
+        ScrollView {
+            VStack(spacing: 16) {
+                if isLoading {
+                    ProgressView("Loading workouts...")
+                        .padding()
+                } else if workouts.isEmpty {
+                    EmptyStateView(
+                        imageName: "figure.run",
+                        title: "No Workouts Yet",
+                        message: "Start tracking your fitness journey by adding your first workout!"
+                    )
+                } else {
+                    ForEach(workouts) { workout in
+                        WorkoutCard(workout: workout)
+                    }
                 }
             }
+            .padding()
         }
-        .padding()
+        .navigationTitle("All Activities")
+        .navigationBarTitleDisplayMode(.large)
         .onAppear {
             loadWorkouts()
         }
